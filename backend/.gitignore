@@ -1,0 +1,13 @@
+# Node dependencies
+node_modules/
+
+# Local env vars
+.env
+
+# test files
+/test CWL json/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
