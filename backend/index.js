@@ -1,8 +1,20 @@
 //setup
 require('dotenv').config();
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const app = express();
+
+// rate-limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15min
+  max: 100,                 // limit 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests, please try again later.',
+});
+
+app.use(limiter);
 
 // player
 app.get('/player/:tag', async (req, res) => {
