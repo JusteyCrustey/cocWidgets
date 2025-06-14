@@ -64,6 +64,8 @@ app.get('/war/:tag', async (req, res) => {
       if (err.response.status === 403) {
         // no war
         clanWarData = { state: 'private' };
+        CWLData = { state : 'private' };
+        
       } else {
         throw err; // rethrow other errors
       }
@@ -74,7 +76,7 @@ app.get('/war/:tag', async (req, res) => {
     CWLCurrWarData=null;
     ourClan = null;
     opponentClan = null;
-    if (clanWarData.state === 'notInWar' || clanWarData.state === 'private') {
+    if (clanWarData.state === 'notInWar' && clanWarData.state !== 'private') {
       try {
         const CWLapi = await axios.get(
           `https://api.clashofclans.com/v1/clans/${clanTag}/currentwar/leaguegroup`, {
@@ -116,7 +118,7 @@ app.get('/war/:tag', async (req, res) => {
         
 
       } catch (err) {
-        if (err.response.status === 404) { //TODO: check if this is due to private or no war tested with QC290JRU8
+        if (err.response.status === 404) {
           CWLData = { state: 'notInWar' };
         } else {
           throw err; // rethrow other errors
@@ -124,7 +126,7 @@ app.get('/war/:tag', async (req, res) => {
       }
     }
     
-    const inWar = clanWarData.state !== 'notInWar' && clanWarData.state !== 'private' ? clanWarData.state : (CWLData.state === 'inWar' ? 'cwl' : 'notInWar'),
+    const inWar = clanWarData.state !== 'notInWar' && clanWarData.state !== 'private' ? clanWarData.state : (CWLData.state === 'inWar' ? 'cwl' : CWLData.state),
 
     // prepare data
     out = {
@@ -141,12 +143,49 @@ app.get('/war/:tag', async (req, res) => {
       }
     };
 
+    // player data
     if (inWar !== 'notInWar' && inWar !== 'private') {
-      out.clan.attacks = inWar !== "cwl" ? clanWarData.clan.attacks : ourClan.attacks;
-      out.clan.stars = inWar !== "cwl" ? clanWarData.clan.stars : ourClan.stars;
       out.player.isParticipating = inWar !== "cwl"
         ? (clanWarData.clan.members.find(member => member.tag === playerData.tag) ? 'yes' : 'no')
         : (ourClan.members.find(member => member.tag === playerData.tag) ? 'yes' : 'no');
+      out.player.mapPosition = inWar !== "cwl"
+        ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.mapPosition)
+        : (ourClan.members.find(member => member.tag === playerData.tag)?.mapPosition);
+      
+      if (out.player.isParticipating === 'yes') {
+        out.player.attacks = inWar !== "cwl"
+          ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.attacks || [])
+          : (ourClan.members.find(member => member.tag === playerData.tag)?.attacks || []);
+        await Promise.all(
+          out.player.attacks.map(async (attack) => {
+            const defender = await axios.get(
+          `https://api.clashofclans.com/v1/players/${encodeURIComponent(attack.defenderTag)}`,
+          { headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` } }
+            );
+            attack.defenderName = defender.data.name;
+            attack.defenderTownHallLevel = defender.data.townHallLevel;
+            attack.defenderMapPosition = defender.data.mapPosition;
+          })
+        );
+        out.player.defense = inWar !== "cwl"
+          ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || [])
+          : (ourClan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || []);
+        if (out.player.defense && out.player.defense.attackerTag) {
+          const attacker = await axios.get(
+            `https://api.clashofclans.com/v1/players/${encodeURIComponent(out.player.defense.attackerTag)}`,
+            { headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` } }
+          );
+          out.player.defense.attackerName = attacker.data.name;
+          out.player.defense.attackerTownHallLevel = attacker.data.townHallLevel;
+          out.player.defense.attackerMapPosition = attacker.data.mapPosition;
+        }
+      }
+      
+      // clan data
+      out.clan.attacks = inWar !== "cwl" ? clanWarData.clan.attacks : ourClan.attacks;
+      out.clan.stars = inWar !== "cwl" ? clanWarData.clan.stars : ourClan.stars;
+
+      // opponent clan data
       out.opponent = {
         name: inWar !== "cwl" ? clanWarData.opponent.name : opponentClan.name,
         tag: inWar !== "cwl" ? clanWarData.opponent.tag : opponentClan.tag,
@@ -154,6 +193,8 @@ app.get('/war/:tag', async (req, res) => {
         attacks: inWar !== "cwl" ? clanWarData.opponent.attacks : opponentClan.attacks,
         stars: inWar !== "cwl" ? clanWarData.opponent.stars : opponentClan.stars,
       };
+
+      // war data
       out.maxStars = inWar !== "cwl"
         ? clanWarData.teamSize * clanWarData.attacksPerMember * 3
         : CWLCurrWarData.teamSize * 3;
@@ -169,31 +210,9 @@ app.get('/war/:tag', async (req, res) => {
       out.endTime = inWar !== "cwl"
         ? clanWarData.endTime
         : CWLCurrWarData.endTime;
-      out.player.attacks = inWar !== "cwl"
-        ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.attacks || [])
-        : (ourClan.members.find(member => member.tag === playerData.tag)?.attacks || []);
-      await Promise.all(
-        out.player.attacks.map(async (attack) => {
-          const defender = await axios.get(
-        `https://api.clashofclans.com/v1/players/${encodeURIComponent(attack.defenderTag)}`,
-        { headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` } }
-          );
-          attack.defenderName = defender.data.name;
-          attack.defenderTownHallLevel = defender.data.townHallLevel;
-        })
-      );
-      out.player.defense = inWar !== "cwl"
-        ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || [])
-        : (ourClan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || []);
-      if (out.player.defense && out.player.defense.attackerTag) {
-        const attacker = await axios.get(
-          `https://api.clashofclans.com/v1/players/${encodeURIComponent(out.player.defense.attackerTag)}`,
-          { headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` } }
-        );
-        out.player.defense.attackerName = attacker.data.name;
-        out.player.defense.attackerTownHallLevel = attacker.data.townHallLevel;
+      if (inWar === 'cwl') {
+        out.roundStatus = status;
       }
-        out.roundStatus = inWar === 'cwl' ? status : [];
     }
 
     res.json(out);
