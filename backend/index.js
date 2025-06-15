@@ -31,7 +31,7 @@ app.get('/player/:tag', async (req, res) => {
     res.json(apiRes.data);
 
   } catch (err) {
-    res.status((err.response && err.response.status) || 500)
+    res.status((err.response?.status) || 500)
        .json({ error: err.message });
   }
 });
@@ -47,12 +47,18 @@ app.get('/war/:tag', async (req, res) => {
         headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` }
       }
     );
-    playerData = playerapi.data;
+    let playerData = playerapi.data;
+
+    // check if player is in a clan
+    if (!playerData.clan) {
+      return res.status(404).json({ error: 'Player is not in a clan.' });
+    }
 
     // get clan tag
     const clanTag =  encodeURIComponent(playerData.clan.tag);
 
     // coc clan war api call
+    let clanWarData;
     try {
       const clanWarapi = await axios.get(
         `https://api.clashofclans.com/v1/clans/${clanTag}/currentwar`, {
@@ -61,22 +67,21 @@ app.get('/war/:tag', async (req, res) => {
       );
       clanWarData = clanWarapi.data;
     } catch (err) {
-      if (err.response.status === 403) {
-        // no war
+      if (err.response?.status === 403) {
+        // private
         clanWarData = { state: 'private' };
-        CWLData = { state : 'private' };
-        
       } else {
         throw err; // rethrow other errors
       }
     }
 
     // coc CWL api call
-    const status = ['','','','','','','']
-    CWLCurrWarData=null;
-    ourClan = null;
-    opponentClan = null;
-    if (clanWarData.state === 'notInWar' && clanWarData.state !== 'private') {
+    let status = []
+    let CWLCurrWarData;
+    let ourClan;
+    let opponentClan;
+    let CWLData = { state: 'notInWar' }; // default CWL data
+    if (clanWarData.state === 'notInWar' || clanWarData.state === 'warEnded') {
       try {
         const CWLapi = await axios.get(
           `https://api.clashofclans.com/v1/clans/${clanTag}/currentwar/leaguegroup`, {
@@ -84,17 +89,19 @@ app.get('/war/:tag', async (req, res) => {
           }
         );
         CWLData = CWLapi.data;
-
+        
         if (CWLData.state !== 'notInWar') {
+          status = Array(CWLData.rounds.length).fill('');
+
           for (let i = 0; i < CWLData.rounds.length; i++) {
             for (let j = 0; j < CWLData.rounds[i].warTags.length; j++) {
-              warTag = encodeURIComponent(CWLData.rounds[i].warTags[j]);
+              const warTag = encodeURIComponent(CWLData.rounds[i].warTags[j]);
               const CWLWarapi = await axios.get(
                 `https://api.clashofclans.com/v1/clanwarleagues/wars/${warTag}`, {
                   headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` }
                 }
               );
-              CWLWarData = CWLWarapi.data;
+              const CWLWarData = CWLWarapi.data;
               
               if (CWLWarData.clan.tag === playerData.clan.tag) {
               ourClan = CWLWarData.clan;
@@ -113,12 +120,11 @@ app.get('/war/:tag', async (req, res) => {
               }
               break;
             }
+            if (CWLCurrWarData) break;
           }
         }
-        
-
       } catch (err) {
-        if (err.response.status === 404) {
+        if (err.response?.status === 404) {
           CWLData = { state: 'notInWar' };
         } else {
           throw err; // rethrow other errors
@@ -126,10 +132,10 @@ app.get('/war/:tag', async (req, res) => {
       }
     }
     
-    const inWar = clanWarData.state !== 'notInWar' && clanWarData.state !== 'private' ? clanWarData.state : (CWLData.state === 'inWar' ? 'cwl' : CWLData.state),
+    const inWar = clanWarData.state !== 'notInWar' && clanWarData.state !== 'private' ? clanWarData.state : (CWLData.state === 'inWar' ? 'cwl' : clanWarData.state);
 
     // prepare data
-    out = {
+    let out = {
       inWar: inWar,
       player: {
         tag: playerData.tag,
@@ -233,7 +239,7 @@ app.get('/war/:tag', async (req, res) => {
     res.json(out);
 
   } catch (err) {
-    res.status((err.response && err.response.status) || 500)
+    res.status((err.response?.status) || 500)
        .json({ error: err.message });
   }
 });
