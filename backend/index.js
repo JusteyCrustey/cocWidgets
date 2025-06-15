@@ -159,17 +159,22 @@ app.get('/war/:tag', async (req, res) => {
         await Promise.all(
           out.player.attacks.map(async (attack) => {
             const defender = await axios.get(
-          `https://api.clashofclans.com/v1/players/${encodeURIComponent(attack.defenderTag)}`,
-          { headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` } }
+              `https://api.clashofclans.com/v1/players/${encodeURIComponent(attack.defenderTag)}`,
+              { headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` } }
             );
             attack.defenderName = defender.data.name;
             attack.defenderTownHallLevel = defender.data.townHallLevel;
-            attack.defenderMapPosition = defender.data.mapPosition;
+
+            attack.defenderMapPosition = inWar !== "cwl"
+              ? (clanWarData.opponent.members.find(member => member.tag === attack.defenderTag).mapPosition)
+              : (opponentClan.members.find(member => member.tag === attack.defenderTag).mapPosition);
           })
+        
         );
         out.player.defense = inWar !== "cwl"
-          ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || [])
-          : (ourClan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || []);
+          ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || {})
+          : (ourClan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || {});
+        
         if (out.player.defense && out.player.defense.attackerTag) {
           const attacker = await axios.get(
             `https://api.clashofclans.com/v1/players/${encodeURIComponent(out.player.defense.attackerTag)}`,
@@ -177,7 +182,9 @@ app.get('/war/:tag', async (req, res) => {
           );
           out.player.defense.attackerName = attacker.data.name;
           out.player.defense.attackerTownHallLevel = attacker.data.townHallLevel;
-          out.player.defense.attackerMapPosition = attacker.data.mapPosition;
+          out.player.defense.attackerMapPosition = inWar !== "cwl"
+            ? (clanWarData.opponent.members.find(member => member.tag === out.player.defense.attackerTag).mapPosition)
+            : (opponentClan.members.find(member => member.tag === out.player.defense.attackerTag).mapPosition);
         }
       }
       
