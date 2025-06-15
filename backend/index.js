@@ -139,7 +139,7 @@ app.get('/war/:tag', async (req, res) => {
       clan: {
         name: playerData.clan.name,
         tag: playerData.clan.tag,
-        badgeUrls: playerData.clan.badgeUrls, //small, medium, large
+        badgeUrls: playerData.clan.badgeUrls, // small, medium, large
       }
     };
 
@@ -152,7 +152,9 @@ app.get('/war/:tag', async (req, res) => {
         ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.mapPosition)
         : (ourClan.members.find(member => member.tag === playerData.tag)?.mapPosition);
       
+      // attacks and defense
       if (out.player.isParticipating === 'yes') {
+        // attacks
         out.player.attacks = inWar !== "cwl"
           ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.attacks || [])
           : (ourClan.members.find(member => member.tag === playerData.tag)?.attacks || []);
@@ -164,6 +166,8 @@ app.get('/war/:tag', async (req, res) => {
             );
             attack.defenderName = defender.data.name;
             attack.defenderTownHallLevel = defender.data.townHallLevel;
+            delete attack.order; // remove order
+            delete attack.attackerTag; // remove attackerTag
 
             attack.defenderMapPosition = inWar !== "cwl"
               ? (clanWarData.opponent.members.find(member => member.tag === attack.defenderTag).mapPosition)
@@ -171,6 +175,8 @@ app.get('/war/:tag', async (req, res) => {
           })
         
         );
+
+        // defense
         out.player.defense = inWar !== "cwl"
           ? (clanWarData.clan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || {})
           : (ourClan.members.find(member => member.tag === playerData.tag)?.bestOpponentAttack || {});
@@ -185,6 +191,8 @@ app.get('/war/:tag', async (req, res) => {
           out.player.defense.attackerMapPosition = inWar !== "cwl"
             ? (clanWarData.opponent.members.find(member => member.tag === out.player.defense.attackerTag).mapPosition)
             : (opponentClan.members.find(member => member.tag === out.player.defense.attackerTag).mapPosition);
+          delete out.player.defense.order; // remove order
+          delete out.player.defense.defenderTag; // remove defenderTag
         }
       }
       
