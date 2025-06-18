@@ -1,1 +1,1 @@
-hi
+Clash of Clans Widgets is a work-in-progress community project to create IOS widgets for Clash of Clans.  We are currently working on a scriptable widget for showcasing your clan's current war status live.
