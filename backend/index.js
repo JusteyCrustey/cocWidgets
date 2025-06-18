@@ -4,6 +4,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const app = express();
+app.use(cors()); // enable CORS for all routes for now
 
 // rate-limiter
 const limiter = rateLimit({
