@@ -267,6 +267,23 @@ app.get('/war/:tag', async (req, res) => {
               `https://api.clashofclans.com/v1/players/${encodeURIComponent(attack.defenderTag)}`,
               { headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` } }
             );
+
+            // Find previous best attack (from any clan member) on this defender, with lower order
+            let allClanAttacks = [];
+            if (inWar !== "cwl") {
+              allClanAttacks = clanWarData.clan.members.flatMap(m => m.attacks || []);
+            } else {
+              allClanAttacks = ourClan.members.flatMap(m => m.attacks || []);
+            }
+            const prevAttacks = allClanAttacks.filter(a =>
+              a.defenderTag === attack.defenderTag && a.order < attack.order
+            );
+            let prevBestStars = 0;
+            if (prevAttacks.length > 0) {
+              prevBestStars = Math.max(...prevAttacks.map(a => a.stars));
+            }
+            attack.newStars = attack.stars - prevBestStars > 0 ? attack.stars - prevBestStars : 0;
+
             attack.defenderName = defender.data.name;
             attack.defenderTownHallLevel = defender.data.townHallLevel;
             delete attack.order; // remove order
