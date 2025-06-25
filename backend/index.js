@@ -73,7 +73,7 @@ app.get('/war/:tag', async (req, res) => {
         // private
         clanWarData = { state: 'private' };
       } else {
-        throw err; // rethrow other errors
+          return res.status((err.response?.status) || 500).json({ error: err.message });
       }
     }
 
@@ -129,30 +129,125 @@ app.get('/war/:tag', async (req, res) => {
         if (err.response?.status === 404) {
           CWLData = { state: 'notInWar' };
         } else {
-          throw err; // rethrow other errors
+          return res.status((err.response?.status) || 500).json({ error: err.message });
         }
       }
     }
     
-    const inWar = clanWarData.state !== 'notInWar' && clanWarData.state !== 'private' ? clanWarData.state : (CWLData.state === 'inWar' ? 'cwl' : clanWarData.state);
+    let inWar = clanWarData.state !== 'notInWar' && clanWarData.state !== 'private' ? clanWarData.state : (CWLData.state === 'inWar' ? 'cwl' : clanWarData.state);
+
+    //grab last war
+    let lastWarData = null;
+    if (inWar === 'notInWar') {
+      try {
+        const lastWarApi = await axios.get(
+          `https://api.clashofclans.com/v1/clans/${clanTag}/warlog`, {
+            headers: { Authorization: `Bearer ${process.env.COC_TOKEN}` },
+            params: { limit: 1 } // get only the last war
+          }
+        );
+        const lastWar = lastWarApi.data.items[0];
+        if (lastWar && lastWar.result !== null && lastWar.endTime) {
+          // Parse endTime (example format: '20250624T031048.000Z')
+          const endTime = new Date(
+            lastWar.endTime.replace(/(\d{8})T(\d{6})\.(\d{3})Z/,
+              (m, d, t) => `${d.substr(0,4)}-${d.substr(4,2)}-${d.substr(6,2)}T${t.substr(0,2)}:${t.substr(2,2)}:${t.substr(4,2)}.000Z`)
+          );
+          const now = new Date();
+          const diffHours = (now - endTime) / (1000 * 60 * 60);
+          if (diffHours <= 24 && diffHours >= 0) {
+            lastWarData = lastWar;
+            clanWarData = lastWarData;
+            inWar = 'warEnded';
+          }
+        }
+      }
+      catch (err) {
+        if (err.response?.status !== 403) { // if 403, it means the war log is private
+          return res.status((err.response?.status) || 500).json({ error: err.message });
+        }
+      }
+    }
+
 
     // prepare data
-    let out = {
-      inWar: inWar,
-      player: {
+    let out;
+
+    // Helper to build player info for lastWarData
+    function buildPlayerLastWar(playerData, lastWarData) {
+      return {
         tag: playerData.tag,
         name: playerData.name,
         townHallLevel: playerData.townHallLevel,
-      },
-      clan: {
-        name: playerData.clan.name,
-        tag: playerData.clan.tag,
-        badgeUrls: playerData.clan.badgeUrls, // small, medium, large
-      }
-    };
+        isParticipating: undefined, // warlog does not provide member info
+        mapPosition: undefined, // warlog does not provide mapPosition
+        attacks: [], // warlog does not provide detailed attacks
+        defense: {} // warlog does not provide defense info
+      };
+    }
+
+    // Helper to build clan info
+    function buildClanInfo(clan) {
+      return {
+        name: clan.name,
+        tag: clan.tag,
+        badgeUrls: clan.badgeUrls,
+        attacks: clan.attacks,
+        stars: clan.stars,
+        destructionPercentage: clan.destructionPercentage,
+        expEarned: clan.expEarned,
+        clanLevel: clan.clanLevel
+      };
+    }
+
+    // Helper to build opponent info
+    function buildOpponentInfo(opponent) {
+      return {
+        name: opponent.name,
+        tag: opponent.tag,
+        badgeUrls: opponent.badgeUrls,
+        attacks: opponent.attacks,
+        stars: opponent.stars,
+        destructionPercentage: opponent.destructionPercentage,
+        clanLevel: opponent.clanLevel
+      };
+    }
+
+    if (lastWarData) {
+      // Use lastWarData
+      out = {
+        inWar: 'warEnded',
+        player: buildPlayerLastWar(playerData, lastWarData),
+        clan: buildClanInfo(lastWarData.clan),
+        opponent: buildOpponentInfo(lastWarData.opponent),
+        maxStars: lastWarData.teamSize * lastWarData.attacksPerMember * 3,
+        maxAttacks: lastWarData.teamSize * lastWarData.attacksPerMember,
+        attacksPerMember: lastWarData.attacksPerMember,
+        startTime: undefined, // warlog does not provide startTime
+        endTime: lastWarData.endTime
+      };
+    } else {
+      // Use live war or CWL data
+      out = {
+        inWar,
+        player: {
+          tag: playerData.tag,
+          name: playerData.name,
+          townHallLevel: playerData.townHallLevel,
+          // isParticipating, mapPosition, attacks, defense added below if in war
+        },
+        clan: {
+          name: playerData.clan.name,
+          tag: playerData.clan.tag,
+          badgeUrls: playerData.clan.badgeUrls, // small, medium, large
+          // attacks, stars added below if in war
+        },
+        // opponent, maxStars, maxAttacks, etc. added below if in war
+      };
+    }
 
     // player data
-    if (inWar !== 'notInWar' && inWar !== 'private') {
+    if (!lastWarData && inWar !== 'notInWar' && inWar !== 'private') {
       out.player.isParticipating = inWar !== "cwl"
         ? (clanWarData.clan.members.find(member => member.tag === playerData.tag) ? 'yes' : 'no')
         : (ourClan.members.find(member => member.tag === playerData.tag) ? 'yes' : 'no');
